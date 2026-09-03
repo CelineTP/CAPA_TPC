@@ -31,7 +31,10 @@
       </div>
 
       <button class="btn scan-btn" id="scan-toggle-btn">📷 Scanner un article</button>
-      <div id="reader" style="display:none;"></div>
+      <div id="reader" style="display:none;">
+        <video id="scanner-video" playsinline webkit-playsinline muted autoplay style="width:100%; border-radius:12px; background:#000;"></video>
+        <p style="font-size:12px; color:var(--ink-soft); text-align:center; margin:8px 0 0;">Cadre le code-barres bien à plat, à ~15 cm, dans un bon éclairage.</p>
+      </div>
 
       <div class="card search-box">
         <div class="row">
@@ -119,7 +122,7 @@
 </div>
 
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="https://unpkg.com/@zxing/library@0.20.0/umd/index.min.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
