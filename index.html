@@ -51,25 +51,33 @@
     <section class="screen" id="screen-session">
       <div class="hero">
         <h2>Session en cours</h2>
-        <p><span id="session-count">0</span> ligne(s) prête(s) à être envoyées.</p>
+        <p>La capa et la prépa sont enregistrées séparément et envoyées dans deux fichiers distincts.</p>
       </div>
 
-      <div class="card" style="padding:0;">
-        <div id="session-list"></div>
+      <div class="zone zone-capa">
+        <p class="section-title">Capa · <span id="session-count">0</span> ligne(s)</p>
+        <div class="card" style="padding:0;">
+          <div id="session-list"></div>
+        </div>
+        <div class="card">
+          <button class="btn btn-primary" id="export-capa-btn">Envoyer la capa (XLS 5.0/95)</button>
+          <p class="zone-note">Fichier capa_….xls · colonnes Site / Code article / CAPA, uniquement les capa modifiées.</p>
+          <button class="btn btn-secondary" id="clear-session-btn" style="margin-top:10px;">Vider les capa</button>
+        </div>
       </div>
 
-      <div class="row">
-        <button class="btn btn-secondary" id="clear-session-btn">Vider la session</button>
+      <div class="zone zone-prepa">
+        <p class="section-title">Prépa · <span id="prepa-count">0</span> ligne(s)</p>
+        <div class="card" style="padding:0;">
+          <div id="prepa-list"></div>
+        </div>
+        <div class="card">
+          <button class="btn btn-primary" id="export-prepa-btn">Envoyer la prépa (XLS 5.0/95)</button>
+          <p class="zone-note">Fichier prepa_….xls · colonnes Code article / Quantité.</p>
+          <button class="btn btn-secondary" id="clear-prepa-btn" style="margin-top:10px;">Vider la prépa</button>
+        </div>
       </div>
-
-      <div class="card">
-        <p class="section-title">Envoyer</p>
-        <button class="btn btn-primary" id="export-xls-btn">Envoyer en XLS (5.0/95)</button>
-        <p style="font-size:12px; color:var(--ink-soft); margin:10px 0 0; line-height:1.5;">
-          Colonnes exportées : site (n°) / code article / capa — toutes numériques, uniquement les capa modifiées.
-          Sur iPhone, le menu de partage s'ouvre pour envoyer directement par Mail.
-        </p>
-      </div>
+      <p class="zone-note" style="text-align:center;">Sur iPhone, le menu de partage s'ouvre pour envoyer directement par Mail.</p>
     </section>
 
     <!-- Écran Réglages -->

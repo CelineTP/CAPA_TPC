@@ -21,7 +21,28 @@ Chaque mise à jour : remplace les fichiers modifiés sur GitHub (commit), la ve
 4. Onglet **Session** : la liste ne contient que les capa modifiées. Un tap sur ✎ permet de corriger une quantité, ✕ pour la retirer.
 5. **Envoyer en XLS (5.0/95)** : sur iPhone, le menu de partage iOS s'ouvre pour envoyer directement par Mail (ou AirDrop, Messages, etc.).
 
-Le fichier exporté contient uniquement 3 colonnes numériques : **site (n°) / code article / capa**, uniquement les lignes modifiées — avec 1=VILLE, 2=PUNA, 3=TRVO, 4=PAO, 5=ARUE, 6=MOOREA.
+Le fichier exporté contient uniquement 3 colonnes numériques : **site (n°) / code article / capa**, uniquement les lignes modifiées.
+
+⚠️ **Les numéros de site à l'export sont différents des numéros utilisés dans le fichier stock importé** :
+
+| Magasin | N° dans le fichier stock (siteN/capaN) | N° dans le fichier exporté |
+|---|---|---|
+| VILLE | 1 | 1 |
+| PUNA | 2 | 2 |
+| TRVO | 3 | 5 |
+| PAO | 4 | 6 |
+| ARUE | 5 | 7 |
+| MOOREA | 6 | 8 |
+
+La première colonne (import stock) ne change pas — c'est uniquement la correspondance utilisée pour écrire la colonne "Site" du fichier envoyé par mail qui suit cette deuxième numérotation.
+
+## Prépa
+
+Sous la grille des capa, la fiche article contient un bloc **Prépa** (quantité à préparer) avec son propre bouton « Ajouter à la prépa » : un seul scan, et tu remplis la capa, la prépa, ou les deux. Chaque bouton n'enregistre que son bloc.
+
+- Un article ne peut être ajouté qu'**une seule fois** à la prépa : un second ajout affiche un message d'erreur et ne change rien. Pour corriger une quantité, utilise ✎ dans l'onglet Session.
+- L'onglet **Session** a deux sections distinctes (Capa en bleu, Prépa en orange), chacune avec son bouton d'envoi et son bouton « Vider ».
+- Fichier prépa : `prepa_AAAAMMJJ_HHMM.xls` (XLS 5.0/95), colonnes numériques **Code article / Quantite** (sans accent : le format 5.0/95 ne gère pas bien les caractères accentués dans les libellés). Fichier capa : `capa_….xls`.
 
 ## Point d'attention : codes-barres en notation scientifique
 
@@ -52,5 +73,5 @@ Une fois l'appli ouverte une première fois (et le fichier stock importé), elle
 ## Limites connues
 
 - Le fichier stock est mémorisé dans le stockage local du navigateur (quelques Mo en général suffisants pour plusieurs milliers d'articles). Si le fichier est très volumineux, un message t'avertit s'il n'a pas pu être entièrement mémorisé — dans ce cas, réimporte-le à chaque lancement.
-- Le scan caméra fonctionne dans Safari iOS 15+ (accès à la caméra à autoriser au premier lancement).
+- Le scan caméra utilise la librairie **ZXing** (moteur de décodage barres 1D/2D éprouvé), réglée pour reconnaître EAN-13, EAN-8, UPC-A, UPC-E, Code128, Code39 et ITF. Fonctionne en Safari iOS 15+ (accès à la caméra à autoriser au premier lancement). Si le scan reste noir ou ne réagit pas : vérifie que le site est bien ouvert en HTTPS (github.io l'est par défaut), et que la permission caméra n'a pas été refusée par erreur (Réglages iPhone → Safari → Caméra).
 - Le partage direct par mail avec pièce jointe utilise le menu de partage iOS natif ; sur d'anciens iPhones/versions iOS, l'appli bascule automatiquement sur un téléchargement du fichier à joindre manuellement.

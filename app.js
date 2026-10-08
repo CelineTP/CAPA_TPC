@@ -9,6 +9,23 @@ const SITES = [
   { id: 6, name: "MOOREA" },
 ];
 
+// Numéros de site attendus par le système à l'IMPORT (colonnes siteN/capaN du
+// fichier stock) : NE PAS CHANGER, c'est l'ordre du fichier stock lui-même.
+// Numéros de site attendus à l'EXPORT (colonne "Site" du fichier envoyé) :
+// différents de l'import, fournis par l'utilisateur.
+const EXPORT_SITE_ID = {
+  1: 1, // VILLE
+  2: 2, // PUNA
+  3: 5, // TRVO
+  4: 6, // PAO
+  5: 7, // ARUE
+  6: 8, // MOOREA
+};
+
+function exportSiteId(internalSiteId) {
+  return EXPORT_SITE_ID[internalSiteId] ?? internalSiteId;
+}
+
 const DEFAULT_COLMAP = {
   code: "code",
   libelle: "libelle",
@@ -24,6 +41,7 @@ const LS_KEYS = {
   stock: "capa_stock_v1",
   stockMeta: "capa_stock_meta_v1",
   session: "capa_session_v1",
+  prepa: "capa_prepa_v1",
 };
 
 /* ===================== État ===================== */
@@ -33,6 +51,8 @@ const state = {
   stock: null, // { byCode: Map, byBarcode: Map, list: [] }
   stockMeta: loadJSON(LS_KEYS.stockMeta, null), // { fileName, count, importedAt }
   session: loadJSON(LS_KEYS.session, []), // [{site, code, capa, libelle}]
+  prepa: loadJSON(LS_KEYS.prepa, []), // [{code, qty, libelle}]
+  editingPrepaIdx: null,
   currentArticle: null,
   scannerActive: false,
   editingSessionIdx: null,
@@ -274,6 +294,8 @@ function renderArticleCard() {
       </div>`;
   }).join("");
 
+  const inPrepa = state.prepa.find((p) => p.code === item.code);
+
   wrap.innerHTML = `
     <div class="card article-card">
       ${item.unknown ? `<div class="chip-status off" style="align-self:flex-start">⚠️ Article absent du fichier stock</div>` : ""}
@@ -289,7 +311,20 @@ function renderArticleCard() {
         <p class="section-title" style="margin-bottom:8px;">Capa par site</p>
         <div class="site-editor">${siteRows}</div>
       </div>
-      <button class="btn btn-primary" id="add-entry-btn">Enregistrer les modifications</button>
+      <button class="btn btn-primary" id="add-entry-btn">Enregistrer les capa modifiées</button>
+
+      <div class="prepa-block">
+        <p class="section-title" style="margin-bottom:8px;">Prépa</p>
+        ${inPrepa ? `<div class="chip-status off" style="margin-bottom:10px;">Déjà en prépa : ${inPrepa.qty}</div>` : ""}
+        <div class="stepper" style="margin-bottom:10px;">
+          <button type="button" id="prepa-minus">−</button>
+          <input type="number" inputmode="numeric" id="prepa-input" placeholder="Quantité" value="">
+          <button type="button" id="prepa-plus">+</button>
+        </div>
+        <button class="btn btn-secondary${inPrepa ? " is-blocked" : ""}" id="add-prepa-btn">Ajouter à la prépa</button>
+      </div>
+
+      <button class="btn btn-ghost" id="close-article-btn">Fermer l'article</button>
     </div>
   `;
 
@@ -303,6 +338,38 @@ function renderArticleCard() {
     inp.addEventListener("input", () => markRowModified(inp));
   });
   document.getElementById("add-entry-btn").onclick = saveModifiedCapas;
+  document.getElementById("prepa-minus").onclick = () => stepPrepaInput(-1);
+  document.getElementById("prepa-plus").onclick = () => stepPrepaInput(1);
+  document.getElementById("add-prepa-btn").onclick = addToPrepa;
+  document.getElementById("close-article-btn").onclick = clearArticleSelection;
+}
+
+function stepPrepaInput(delta) {
+  const inp = document.getElementById("prepa-input");
+  inp.value = Math.max(0, (parseInt(inp.value, 10) || 0) + delta);
+}
+
+function addToPrepa() {
+  const item = state.currentArticle;
+  if (!item || !item.code) {
+    showToast("Aucun article sélectionné");
+    return;
+  }
+  const existing = state.prepa.find((p) => p.code === item.code);
+  if (existing) {
+    showToast(`Erreur : article déjà en prépa (qté ${existing.qty}). Modifie-le depuis l'onglet Session.`, 3800);
+    return;
+  }
+  const qty = parseInt(document.getElementById("prepa-input").value, 10);
+  if (isNaN(qty) || qty < 1) {
+    showToast("Renseigne une quantité valide (1 minimum)");
+    return;
+  }
+  state.prepa.push({ code: item.code, qty, libelle: item.libelle });
+  saveJSON(LS_KEYS.prepa, state.prepa);
+  renderPrepaTab();
+  renderArticleCard();
+  showToast(`Ajouté à la prépa · ${item.libelle || item.code}`);
 }
 
 function markRowModified(inputEl) {
@@ -355,7 +422,7 @@ function saveModifiedCapas() {
     showToast("Aucune modification par rapport au fichier");
   } else {
     showToast(`${changedCount} capa mise(s) à jour · ${item.libelle || item.code}`);
-    clearArticleSelection();
+    renderArticleCard();
   }
 }
 
@@ -369,12 +436,18 @@ function clearArticleSelection() {
 
 /* ===================== Session ===================== */
 
+function updateSessionBadge() {
+  const total = state.session.length + state.prepa.length;
+  const badge = document.getElementById("tab-session-badge");
+  badge.textContent = total || "";
+  badge.style.display = total ? "inline-flex" : "none";
+}
+
 function renderSessionTab() {
   const list = document.getElementById("session-list");
   const countEl = document.getElementById("session-count");
   countEl.textContent = state.session.length;
-  document.getElementById("tab-session-badge").textContent = state.session.length || "";
-  document.getElementById("tab-session-badge").style.display = state.session.length ? "inline-flex" : "none";
+  updateSessionBadge();
 
   if (!state.session.length) {
     list.innerHTML = `<div class="empty-state"><div class="emoji">🧾</div><p>Aucune capa modifiée pour l'instant.<br>Scanne ou recherche un article pour commencer.</p></div>`;
@@ -453,6 +526,99 @@ function renderSessionTab() {
   });
 }
 
+function renderPrepaTab() {
+  const list = document.getElementById("prepa-list");
+  document.getElementById("prepa-count").textContent = state.prepa.length;
+  updateSessionBadge();
+
+  if (!state.prepa.length) {
+    list.innerHTML = `<div class="empty-state"><div class="emoji">📋</div><p>Aucun article en prépa pour l'instant.</p></div>`;
+    return;
+  }
+
+  list.innerHTML = state.prepa
+    .map((p, i) => {
+      const name = p.libelle ? escapeHtml(p.libelle) : "Article " + escapeHtml(p.code);
+      if (state.editingPrepaIdx === i) {
+        return `
+        <div class="session-item editing">
+          <div class="si-main">
+            <div class="si-name">${name}</div>
+            <div class="si-meta">code ${escapeHtml(p.code)}</div>
+          </div>
+          <div class="stepper stepper-sm">
+            <button type="button" class="pr-edit-minus">−</button>
+            <input type="number" inputmode="numeric" id="prepa-edit-input" value="${p.qty}">
+            <button type="button" class="pr-edit-plus">+</button>
+          </div>
+          <button class="si-save pr-save" data-idx="${i}" aria-label="Valider">✓</button>
+        </div>`;
+      }
+      return `
+      <div class="session-item">
+        <div class="si-main">
+          <div class="si-name">${name}</div>
+          <div class="si-meta">code ${escapeHtml(p.code)}</div>
+        </div>
+        <div class="si-capa si-qty">${p.qty}</div>
+        <button class="si-edit pr-edit" data-idx="${i}" aria-label="Modifier">✎</button>
+        <button class="si-del pr-del" data-idx="${i}" aria-label="Supprimer">✕</button>
+      </div>`;
+    })
+    .join("");
+
+  list.querySelectorAll(".pr-del").forEach((btn) => {
+    btn.onclick = () => {
+      state.prepa.splice(Number(btn.dataset.idx), 1);
+      state.editingPrepaIdx = null;
+      saveJSON(LS_KEYS.prepa, state.prepa);
+      renderPrepaTab();
+    };
+  });
+
+  list.querySelectorAll(".pr-edit").forEach((btn) => {
+    btn.onclick = () => {
+      state.editingPrepaIdx = Number(btn.dataset.idx);
+      renderPrepaTab();
+      const inp = document.getElementById("prepa-edit-input");
+      if (inp) inp.focus();
+    };
+  });
+
+  const stepEdit = (delta) => {
+    const inp = document.getElementById("prepa-edit-input");
+    inp.value = Math.max(0, (parseInt(inp.value, 10) || 0) + delta);
+  };
+  const minusBtn = list.querySelector(".pr-edit-minus");
+  const plusBtn = list.querySelector(".pr-edit-plus");
+  if (minusBtn) minusBtn.onclick = () => stepEdit(-1);
+  if (plusBtn) plusBtn.onclick = () => stepEdit(1);
+
+  list.querySelectorAll(".pr-save").forEach((btn) => {
+    btn.onclick = () => {
+      const val = parseInt(document.getElementById("prepa-edit-input").value, 10);
+      if (isNaN(val) || val < 1) {
+        showToast("Quantité invalide (1 minimum)");
+        return;
+      }
+      state.prepa[Number(btn.dataset.idx)].qty = val;
+      state.editingPrepaIdx = null;
+      saveJSON(LS_KEYS.prepa, state.prepa);
+      renderPrepaTab();
+      showToast("Quantité mise à jour");
+    };
+  });
+}
+
+function clearPrepa() {
+  if (!state.prepa.length) return;
+  if (!confirm("Vider toute la prépa en cours ? Cette action est irréversible.")) return;
+  state.prepa = [];
+  state.editingPrepaIdx = null;
+  saveJSON(LS_KEYS.prepa, state.prepa);
+  renderPrepaTab();
+}
+
 function stepEditInput(delta) {
   const inp = document.getElementById("si-edit-input");
   const val = Math.max(0, (parseInt(inp.value, 10) || 0) + delta);
@@ -461,7 +627,7 @@ function stepEditInput(delta) {
 
 function clearSession() {
   if (!state.session.length) return;
-  if (!confirm("Vider toute la session en cours ? Cette action est irréversible.")) return;
+  if (!confirm("Vider toutes les capa en cours ? Cette action est irréversible.")) return;
   state.session = [];
   state.editingSessionIdx = null;
   saveJSON(LS_KEYS.session, state.session);
@@ -471,18 +637,25 @@ function clearSession() {
 /* ===================== Export ===================== */
 
 function buildExportRows() {
-  // Colonnes strictement numériques : site (id 1-6) / code article / capa
+  // Colonnes strictement numériques : site (numéro d'export) / code article / capa
   // Uniquement les capa réellement modifiées par rapport au fichier stock.
   const header = ["Site", "Code article", "CAPA"];
-  const dataRows = state.session.map((e) => [Number(e.site), Number(e.code), Number(e.capa)]);
+  const dataRows = state.session.map((e) => [exportSiteId(e.site), Number(e.code), Number(e.capa)]);
   return [header, ...dataRows];
 }
 
-function buildWorkbook() {
-  const rows = buildExportRows();
+function buildPrepaExportRows() {
+  // Colonnes numériques : code article / quantité
+  const header = ["Code article", "Quantite"];
+  const dataRows = state.prepa.map((p) => [Number(p.code), Number(p.qty)]);
+  return [header, ...dataRows];
+}
+
+function buildWorkbook(kind) {
+  const rows = kind === "prepa" ? buildPrepaExportRows() : buildExportRows();
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.aoa_to_sheet(rows);
-  XLSX.utils.book_append_sheet(wb, ws, "CAPA");
+  XLSX.utils.book_append_sheet(wb, ws, kind === "prepa" ? "PREPA" : "CAPA");
   return wb;
 }
 
@@ -492,24 +665,25 @@ function timestampForFile() {
   return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}`;
 }
 
-async function exportAndShare() {
-  if (!state.session.length) {
-    showToast("La session est vide");
+async function exportAndShare(kind) {
+  const list = kind === "prepa" ? state.prepa : state.session;
+  if (!list.length) {
+    showToast(kind === "prepa" ? "La prépa est vide" : "Aucune capa à envoyer");
     return;
   }
   const ts = timestampForFile();
-  const wb = buildWorkbook();
+  const wb = buildWorkbook(kind);
   const out = XLSX.write(wb, { bookType: "biff5", type: "array" });
   const blob = new Blob([out], { type: "application/vnd.ms-excel" });
-  const filename = `capa_${ts}.xls`;
+  const filename = `${kind}_${ts}.xls`;
   const file = new File([blob], filename, { type: "application/vnd.ms-excel" });
 
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
     try {
       await navigator.share({
         files: [file],
-        title: "Capa stock",
-        text: `Fichier capa (${state.session.length} lignes) — ${filename}`,
+        title: kind === "prepa" ? "Prépa" : "Capa stock",
+        text: `Fichier ${kind} (${list.length} lignes) — ${filename}`,
       });
       return;
     } catch (err) {
@@ -529,9 +703,24 @@ async function exportAndShare() {
   showToast("Fichier téléchargé — joins-le manuellement à ton mail", 3500);
 }
 
-/* ===================== Scanner caméra ===================== */
+/* ===================== Scanner caméra (ZXing) ===================== */
 
-let html5QrCode = null;
+let zxingReader = null;
+
+function buildZxingHints() {
+  const hints = new Map();
+  hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [
+    ZXing.BarcodeFormat.EAN_13,
+    ZXing.BarcodeFormat.EAN_8,
+    ZXing.BarcodeFormat.UPC_A,
+    ZXing.BarcodeFormat.UPC_E,
+    ZXing.BarcodeFormat.CODE_128,
+    ZXing.BarcodeFormat.CODE_39,
+    ZXing.BarcodeFormat.ITF,
+  ]);
+  hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+  return hints;
+}
 
 async function startScanner() {
   const readerEl = document.getElementById("reader");
@@ -539,17 +728,17 @@ async function startScanner() {
   document.getElementById("scan-toggle-btn").textContent = "Arrêter le scan";
   state.scannerActive = true;
 
-  html5QrCode = new Html5Qrcode("reader");
-  const config = { fps: 12, qrbox: { width: 260, height: 140 }, aspectRatio: 1.6 };
+  zxingReader = new ZXing.BrowserMultiFormatReader(buildZxingHints());
 
   try {
-    await html5QrCode.start(
-      { facingMode: "environment" },
-      config,
-      (decodedText) => {
-        onScanSuccess(decodedText);
-      },
-      () => {}
+    await zxingReader.decodeFromConstraints(
+      { audio: false, video: { facingMode: { ideal: "environment" } } },
+      "scanner-video",
+      (result, err) => {
+        if (result) onScanSuccess(result.getText());
+        // err (NotFoundException) est déclenché en continu tant qu'aucun code
+        // n'est détecté sur l'image courante : c'est normal, on l'ignore.
+      }
     );
   } catch (err) {
     console.error(err);
@@ -558,17 +747,16 @@ async function startScanner() {
   }
 }
 
-async function stopScanner() {
+function stopScanner() {
   state.scannerActive = false;
   document.getElementById("scan-toggle-btn").textContent = "Scanner un article";
-  const readerEl = document.getElementById("reader");
-  if (html5QrCode) {
+  document.getElementById("reader").style.display = "none";
+  if (zxingReader) {
     try {
-      await html5QrCode.stop();
-      html5QrCode.clear();
+      zxingReader.reset();
     } catch (e) {}
+    zxingReader = null;
   }
-  readerEl.style.display = "none";
 }
 
 let lastScanCode = null;
@@ -595,7 +783,9 @@ function goToScreen(name) {
   if (name !== "scan" && state.scannerActive) stopScanner();
   if (name === "session") {
     state.editingSessionIdx = null;
+    state.editingPrepaIdx = null;
     renderSessionTab();
+    renderPrepaTab();
   }
   if (name === "settings") renderStockStatus();
 }
@@ -643,6 +833,7 @@ function init() {
   tryRestoreStockFromCache();
   renderStockStatus();
   renderSessionTab();
+  renderPrepaTab();
   renderColMapForm();
   goToScreen("scan");
 
@@ -700,7 +891,9 @@ function init() {
   };
 
   document.getElementById("clear-session-btn").onclick = clearSession;
-  document.getElementById("export-xls-btn").onclick = exportAndShare;
+  document.getElementById("clear-prepa-btn").onclick = clearPrepa;
+  document.getElementById("export-capa-btn").onclick = () => exportAndShare("capa");
+  document.getElementById("export-prepa-btn").onclick = () => exportAndShare("prepa");
 
   document.getElementById("save-colmap-btn").onclick = saveColMapForm;
   document.getElementById("reset-colmap-btn").onclick = () => {
