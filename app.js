@@ -298,7 +298,9 @@ function renderArticleCard() {
 
   wrap.innerHTML = `
     <div class="card article-card">
+      <div class="ac-head">
       ${item.unknown ? `<div class="chip-status off" style="align-self:flex-start">⚠️ Article absent du fichier stock</div>` : ""}
+      <div class="ac-titlebar">
       <div>
         <div class="article-title">${item.libelle ? escapeHtml(item.libelle) : "(sans désignation)"}</div>
         <div class="article-code">Code ${escapeHtml(item.code || "—")}${item.barcode ? " · CB " + escapeHtml(item.barcode) : ""}</div>
@@ -307,12 +309,18 @@ function renderArticleCard() {
         <div class="stat"><div class="v">${formatPV(item.pv)}</div><div class="l">PV</div></div>
         <div class="stat"><div class="v">${item.entrepotStock}</div><div class="l">Stock entrepôt</div></div>
       </div>
+      </div>
+      </div>
+      <div class="ac-body">
+      <div class="ac-capa">
       <div>
         <p class="section-title" style="margin-bottom:8px;">Capa par site</p>
         <div class="site-editor">${siteRows}</div>
       </div>
       <button class="btn btn-primary" id="add-entry-btn">Enregistrer les capa modifiées</button>
+      </div>
 
+      <div class="ac-prepa">
       <div class="prepa-block">
         <p class="section-title" style="margin-bottom:8px;">Prépa</p>
         ${inPrepa ? `<div class="chip-status off" style="margin-bottom:10px;">Déjà en prépa : ${inPrepa.qty}</div>` : ""}
@@ -322,6 +330,8 @@ function renderArticleCard() {
           <button type="button" id="prepa-plus">+</button>
         </div>
         <button class="btn btn-secondary${inPrepa ? " is-blocked" : ""}" id="add-prepa-btn">Ajouter à la prépa</button>
+      </div>
+      </div>
       </div>
 
       <button class="btn btn-ghost" id="close-article-btn">Fermer l'article</button>

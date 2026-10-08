@@ -25,6 +25,8 @@
 
     <!-- Écran Scan / Recherche -->
     <section class="screen active" id="screen-scan">
+      <div class="scan-layout">
+      <div class="scan-left">
       <div class="hero">
         <h2>Scanner un article</h2>
         <p>Scanne le code-barres, ou cherche par code interne / libellé.</p>
@@ -44,7 +46,15 @@
         <div class="suggestions" id="suggestions"></div>
       </div>
 
-      <div id="article-card-wrap"></div>
+      </div>
+      <div class="scan-right">
+        <div id="article-card-wrap"></div>
+        <div class="scan-placeholder">
+          <div class="emoji">📷</div>
+          <p>Scanne ou recherche un article :<br>la fiche (capa et prépa) s'affichera ici.</p>
+        </div>
+      </div>
+      </div>
     </section>
 
     <!-- Écran Session -->
@@ -77,7 +87,7 @@
           <button class="btn btn-secondary" id="clear-prepa-btn" style="margin-top:10px;">Vider la prépa</button>
         </div>
       </div>
-      <p class="zone-note" style="text-align:center;">Sur iPhone, le menu de partage s'ouvre pour envoyer directement par Mail.</p>
+      <p class="zone-note" style="text-align:center;">Le menu de partage du téléphone ou de la tablette s'ouvre pour envoyer directement par Mail.</p>
     </section>
 
     <!-- Écran Réglages -->
