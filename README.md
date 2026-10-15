@@ -44,6 +44,18 @@ Sous la grille des capa, la fiche article contient un bloc **Prépa** (quantité
 - L'onglet **Session** a deux sections distinctes (Capa en bleu, Prépa en orange), chacune avec son bouton d'envoi et son bouton « Vider ».
 - Fichier prépa : `prepa_AAAAMMJJ_HHMM.xls` (XLS 5.0/95), colonnes numériques **Code article / Quantite** (sans accent : le format 5.0/95 ne gère pas bien les caractères accentués dans les libellés). Fichier capa : `capa_….xls`.
 
+## Envoi par Gmail
+
+Dans **Réglages → Envoi par Gmail**, renseigne le(s) destinataire(s) et l'identifiant client Google (voir la création ci-dessous). Une fois activé, les boutons « Envoyer la capa / la prépa » envoient directement un mail avec le fichier XLS 5.0/95 en pièce jointe, sans rien télécharger. Tant que ce n'est pas configuré, l'appli utilise le menu de partage du téléphone ou de la tablette.
+
+Création de l'identifiant client (une seule fois) :
+1. Sur console.cloud.google.com, crée un projet puis active l'**API Gmail** (APIs et services → Bibliothèque).
+2. Configure l'**écran de consentement OAuth** (type Externe, ou Interne si compte Google Workspace), ajoute le scope `gmail.send` et ton adresse Gmail comme **utilisateur test**.
+3. Identifiants → Créer des identifiants → **ID client OAuth**, type « Application Web ». Dans « Origines JavaScript autorisées », ajoute `https://ton-compte.github.io` (sans le nom du dépôt).
+4. Copie l'ID client (finit par `.apps.googleusercontent.com`) et colle-le dans les Réglages de l'appli.
+
+À la première utilisation, Google affiche un écran d'autorisation (et peut signaler une application non vérifiée : Avancé → continuer). L'autorisation peut être redemandée de temps en temps.
+
 ## Point d'attention : codes-barres en notation scientifique
 
 Dans le fichier stock fourni en exemple, la colonne `codebarre` est stockée comme un nombre et peut apparaître en notation scientifique dans Excel (ex. `8,00084E+12`). L'appli reconvertit ce nombre en chaîne de chiffres complète pour le comparer au code scanné. Cela fonctionne bien pour des codes-barres à 13 chiffres (EAN-13), mais :

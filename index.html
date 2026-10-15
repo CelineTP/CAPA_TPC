@@ -87,7 +87,7 @@
           <button class="btn btn-secondary" id="clear-prepa-btn" style="margin-top:10px;">Vider la prépa</button>
         </div>
       </div>
-      <p class="zone-note" style="text-align:center;">Le menu de partage du téléphone ou de la tablette s'ouvre pour envoyer directement par Mail.</p>
+      <p class="zone-note" style="text-align:center;">Envoi direct par Gmail si configuré dans Réglages, sinon le menu de partage s'ouvre.</p>
     </section>
 
     <!-- Écran Réglages -->
@@ -105,6 +105,22 @@
           <input type="file" id="stock-file-input" accept=".csv,.xls,.xlsx" style="display:none;">
         </label>
         <button class="btn btn-ghost btn-sm" id="forget-stock-btn" style="margin-top:8px;">Oublier ce fichier</button>
+      </div>
+
+      <div class="card">
+        <p class="section-title">Envoi par Gmail</p>
+        <div id="mail-status" style="margin-bottom:12px;"></div>
+        <label class="mail-field">Destinataire(s) — plusieurs adresses séparées par une virgule
+          <input type="text" id="mail-to" inputmode="email" autocomplete="off" autocapitalize="off" placeholder="nom@exemple.com">
+        </label>
+        <label class="mail-field" style="margin-top:12px;">Identifiant client Google (OAuth)
+          <input type="text" id="mail-client-id" autocomplete="off" autocapitalize="off" placeholder="123456-abc.apps.googleusercontent.com">
+        </label>
+        <p class="zone-note">Le mail part du compte Gmail que tu choisis à la première autorisation. Le fichier XLS est joint automatiquement, rien n'est téléchargé.</p>
+        <div class="row" style="margin-top:12px;">
+          <button class="btn btn-secondary btn-sm" id="disable-mail-btn">Désactiver</button>
+          <button class="btn btn-primary btn-sm" id="save-mail-btn">Enregistrer</button>
+        </div>
       </div>
 
       <details class="adv">
@@ -141,6 +157,7 @@
 
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="https://unpkg.com/@zxing/library@0.20.0/umd/index.min.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <script src="app.js"></script>
 </body>
 </html>
