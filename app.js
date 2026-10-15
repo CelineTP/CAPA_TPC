@@ -42,6 +42,7 @@ const LS_KEYS = {
   stockMeta: "capa_stock_meta_v1",
   session: "capa_session_v1",
   prepa: "capa_prepa_v1",
+  mail: "capa_mail_v1",
 };
 
 /* ===================== État ===================== */
@@ -53,6 +54,8 @@ const state = {
   session: loadJSON(LS_KEYS.session, []), // [{site, code, capa, libelle}]
   prepa: loadJSON(LS_KEYS.prepa, []), // [{code, qty, libelle}]
   editingPrepaIdx: null,
+  mail: loadJSON(LS_KEYS.mail, { clientId: "", to: "" }),
+  sending: false,
   currentArticle: null,
   scannerActive: false,
   editingSessionIdx: null,
@@ -675,17 +678,153 @@ function timestampForFile() {
   return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}`;
 }
 
+/* ===================== Envoi Gmail ===================== */
+
+let gmailToken = null; // { token, exp }
+
+function parseRecipients(str) {
+  return String(str || "")
+    .split(/[,;\s]+/)
+    .map((x) => x.trim())
+    .filter(Boolean);
+}
+
+function isValidEmail(e) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
+}
+
+function mailConfigured() {
+  return !!(state.mail.clientId && parseRecipients(state.mail.to).length);
+}
+
+// À appeler directement depuis le clic (le popup Google exige un geste utilisateur).
+function getGmailToken() {
+  return new Promise((resolve, reject) => {
+    if (gmailToken && Date.now() < gmailToken.exp - 60000) return resolve(gmailToken.token);
+    if (!window.google || !google.accounts || !google.accounts.oauth2) {
+      return reject(new Error("Service Google indisponible (connexion internet ?)"));
+    }
+    const client = google.accounts.oauth2.initTokenClient({
+      client_id: state.mail.clientId,
+      scope: "https://www.googleapis.com/auth/gmail.send",
+      callback: (resp) => {
+        if (resp.error) return reject(new Error(resp.error_description || resp.error));
+        gmailToken = { token: resp.access_token, exp: Date.now() + (Number(resp.expires_in) || 3600) * 1000 };
+        resolve(gmailToken.token);
+      },
+      error_callback: (err) => reject(new Error(err && err.type ? err.type : "Autorisation refusée")),
+    });
+    client.requestAccessToken();
+  });
+}
+
+function bytesToBase64(bytes) {
+  let bin = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+  }
+  return btoa(bin);
+}
+
+function utf8Base64(str) {
+  return bytesToBase64(new TextEncoder().encode(str));
+}
+
+function wrap76(b64) {
+  return b64.replace(/(.{76})/g, "$1\r\n");
+}
+
+function buildMime({ to, subject, bodyText, filename, mime, bytes }) {
+  const boundary = "capa_" + Math.random().toString(36).slice(2);
+  return [
+    `To: ${to}`,
+    `Subject: =?UTF-8?B?${utf8Base64(subject)}?=`,
+    "MIME-Version: 1.0",
+    `Content-Type: multipart/mixed; boundary="${boundary}"`,
+    "",
+    `--${boundary}`,
+    'Content-Type: text/plain; charset="UTF-8"',
+    "Content-Transfer-Encoding: base64",
+    "",
+    wrap76(utf8Base64(bodyText)),
+    `--${boundary}`,
+    `Content-Type: ${mime}; name="${filename}"`,
+    "Content-Transfer-Encoding: base64",
+    `Content-Disposition: attachment; filename="${filename}"`,
+    "",
+    wrap76(bytesToBase64(bytes)),
+    `--${boundary}--`,
+    "",
+  ].join("\r\n");
+}
+
+async function sendViaGmail(token, { kind, count, filename, bytes }) {
+  const to = parseRecipients(state.mail.to).join(", ");
+  const d = new Date();
+  const when = d.toLocaleDateString("fr-FR") + " " + d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+  const label = kind === "prepa" ? "Prépa" : "Capa";
+  const mimeStr = buildMime({
+    to,
+    subject: `${label} stock - ${when} (${count} ligne${count > 1 ? "s" : ""})`,
+    bodyText: `Fichier ${label.toLowerCase()} en pièce jointe (${count} ligne${count > 1 ? "s" : ""}).\nGénéré le ${when} depuis l'appli Capa Stock.`,
+    filename,
+    mime: "application/vnd.ms-excel",
+    bytes,
+  });
+  const raw = bytesToBase64(new TextEncoder().encode(mimeStr)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const res = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ raw }),
+  });
+  if (!res.ok) {
+    if (res.status === 401) gmailToken = null;
+    let msg = `Erreur ${res.status}`;
+    try {
+      const j = await res.json();
+      if (j.error && j.error.message) msg = j.error.message;
+    } catch (e) {}
+    throw new Error(msg);
+  }
+  return to;
+}
+
 async function exportAndShare(kind) {
+  if (state.sending) return;
   const list = kind === "prepa" ? state.prepa : state.session;
   if (!list.length) {
     showToast(kind === "prepa" ? "La prépa est vide" : "Aucune capa à envoyer");
     return;
   }
+
+  // Le popup Google doit s'ouvrir directement depuis le clic : on demande le jeton en premier.
+  const tokenPromise = mailConfigured() ? getGmailToken() : null;
+  if (tokenPromise) tokenPromise.catch(() => {});
+
   const ts = timestampForFile();
   const wb = buildWorkbook(kind);
   const out = XLSX.write(wb, { bookType: "biff5", type: "array" });
-  const blob = new Blob([out], { type: "application/vnd.ms-excel" });
   const filename = `${kind}_${ts}.xls`;
+
+  if (tokenPromise) {
+    state.sending = true;
+    try {
+      const token = await tokenPromise;
+      showToast("Envoi par Gmail en cours…", 8000);
+      const to = await sendViaGmail(token, { kind, count: list.length, filename, bytes: new Uint8Array(out) });
+      showToast(`✓ ${kind === "prepa" ? "Prépa" : "Capa"} envoyée à ${to}`, 4000);
+    } catch (err) {
+      console.error(err);
+      showToast(`Échec de l'envoi Gmail : ${err.message}`, 6000);
+    } finally {
+      state.sending = false;
+    }
+    return;
+  }
+
+  // Gmail non configuré : repli sur le partage du téléphone / tablette (ou téléchargement).
+  const blob = new Blob([out], { type: "application/vnd.ms-excel" });
   const file = new File([blob], filename, { type: "application/vnd.ms-excel" });
 
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
@@ -713,9 +852,18 @@ async function exportAndShare(kind) {
   showToast("Fichier téléchargé — joins-le manuellement à ton mail", 3500);
 }
 
-/* ===================== Scanner caméra (ZXing) ===================== */
+/* ===================== Scanner caméra ===================== */
+// Deux moteurs :
+//  1) BarcodeDetector natif du navigateur (Chrome / Android / tablettes) : rapide et très fiable
+//  2) ZXing en repli (Safari iOS, navigateurs sans détecteur natif)
+// La caméra est ouverte en haute résolution, caméra arrière, avec mise au point continue.
+
+const SCAN_FORMATS = ["ean_13", "ean_8", "upc_a", "upc_e", "code_128", "code_39", "itf"];
 
 let zxingReader = null;
+let scanStream = null;
+let scanTimer = null;
+let scanSession = 0; // permet d'ignorer un démarrage devenu obsolète (arrêt pendant l'ouverture)
 
 function buildZxingHints() {
   const hints = new Map();
@@ -732,40 +880,183 @@ function buildZxingHints() {
   return hints;
 }
 
+function setScanStatus(text) {
+  let el = document.getElementById("scan-status");
+  if (!el) {
+    el = document.createElement("p");
+    el.id = "scan-status";
+    el.style.cssText = "font-size:12px; color:var(--ink-soft); text-align:center; margin:6px 0 0; font-family:var(--mono);";
+    document.getElementById("reader").appendChild(el);
+  }
+  el.textContent = text || "";
+}
+
+// Ouvre la caméra arrière en haute résolution ; réduit les exigences si l'appareil refuse.
+async function openCameraStream() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    const e = new Error("getUserMedia indisponible");
+    e.name = "NotSupportedError";
+    throw e;
+  }
+  const attempts = [
+    { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+    { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } },
+    { facingMode: { ideal: "environment" } },
+    true,
+  ];
+  let lastErr = null;
+  for (const video of attempts) {
+    try {
+      return await navigator.mediaDevices.getUserMedia({ audio: false, video });
+    } catch (e) {
+      lastErr = e;
+      // Inutile de réessayer si l'accès est refusé ou s'il n'y a aucune caméra
+      if (e.name === "NotAllowedError" || e.name === "SecurityError" || e.name === "NotFoundError") break;
+    }
+  }
+  throw lastErr;
+}
+
+// Mise au point continue (et zoom léger) quand l'appareil le permet.
+async function tuneCameraTrack(stream) {
+  try {
+    const track = stream.getVideoTracks()[0];
+    if (!track || !track.getCapabilities) return;
+    const caps = track.getCapabilities();
+    const advanced = [];
+    if (caps.focusMode && caps.focusMode.includes("continuous")) advanced.push({ focusMode: "continuous" });
+    if (advanced.length) await track.applyConstraints({ advanced });
+  } catch (e) {
+    console.warn("Réglage caméra ignoré", e);
+  }
+}
+
+async function makeNativeDetector() {
+  if (!("BarcodeDetector" in window)) return null;
+  try {
+    let formats = SCAN_FORMATS;
+    if (BarcodeDetector.getSupportedFormats) {
+      const supported = await BarcodeDetector.getSupportedFormats();
+      formats = SCAN_FORMATS.filter((f) => supported.includes(f));
+    }
+    if (!formats.length) return null;
+    return new BarcodeDetector({ formats });
+  } catch (e) {
+    console.warn("BarcodeDetector indisponible", e);
+    return null;
+  }
+}
+
+function cameraErrorMessage(err) {
+  switch (err && err.name) {
+    case "NotAllowedError":
+    case "SecurityError":
+      return "Accès à la caméra refusé : autorise-la dans les réglages du navigateur";
+    case "NotFoundError":
+    case "OverconstrainedError":
+      return "Aucune caméra trouvée : utilise la recherche par code";
+    case "NotReadableError":
+    case "AbortError":
+      return "Caméra occupée par une autre appli : ferme-la et réessaie";
+    case "NotSupportedError":
+      return "Caméra indisponible ici : ouvre l'appli en https";
+    default:
+      return "Impossible d'accéder à la caméra";
+  }
+}
+
 async function startScanner() {
+  if (state.scannerActive) return;
+  const session = ++scanSession;
   const readerEl = document.getElementById("reader");
+  const video = document.getElementById("scanner-video");
   readerEl.style.display = "block";
   document.getElementById("scan-toggle-btn").textContent = "Arrêter le scan";
   state.scannerActive = true;
-
-  zxingReader = new ZXing.BrowserMultiFormatReader(buildZxingHints());
+  setScanStatus("Ouverture de la caméra…");
 
   try {
-    await zxingReader.decodeFromConstraints(
-      { audio: false, video: { facingMode: { ideal: "environment" } } },
-      "scanner-video",
-      (result, err) => {
-        if (result) onScanSuccess(result.getText());
+    const stream = await openCameraStream();
+    if (session !== scanSession) {
+      // arrêté pendant l'ouverture
+      stream.getTracks().forEach((t) => t.stop());
+      return;
+    }
+    scanStream = stream;
+    await tuneCameraTrack(stream);
+
+    const detector = await makeNativeDetector();
+    if (session !== scanSession) return;
+
+    if (detector) {
+      video.srcObject = stream;
+      video.muted = true;
+      await video.play();
+      const s = stream.getVideoTracks()[0].getSettings ? stream.getVideoTracks()[0].getSettings() : {};
+      setScanStatus(`Détecteur natif · ${s.width || "?"}×${s.height || "?"}`);
+
+      const tick = async () => {
+        if (session !== scanSession || !state.scannerActive) return;
+        try {
+          if (video.readyState >= 2) {
+            const codes = await detector.detect(video);
+            if (codes && codes.length) {
+              onScanSuccess(codes[0].rawValue);
+              return;
+            }
+          }
+        } catch (e) {
+          // erreurs ponctuelles de détection : on continue
+        }
+        scanTimer = setTimeout(tick, 120);
+      };
+      tick();
+    } else {
+      zxingReader = new ZXing.BrowserMultiFormatReader(buildZxingHints(), 150);
+      const s = stream.getVideoTracks()[0].getSettings ? stream.getVideoTracks()[0].getSettings() : {};
+      setScanStatus(`ZXing · ${s.width || "?"}×${s.height || "?"}`);
+      await zxingReader.decodeFromStream(stream, video, (result, err) => {
+        if (result && session === scanSession) onScanSuccess(result.getText());
         // err (NotFoundException) est déclenché en continu tant qu'aucun code
         // n'est détecté sur l'image courante : c'est normal, on l'ignore.
-      }
-    );
+      });
+    }
   } catch (err) {
     console.error(err);
-    showToast("Impossible d'accéder à la caméra");
-    stopScanner();
+    if (session === scanSession) {
+      showToast(cameraErrorMessage(err), 4500);
+      stopScanner();
+    }
   }
 }
 
 function stopScanner() {
+  scanSession++;
   state.scannerActive = false;
-  document.getElementById("scan-toggle-btn").textContent = "Scanner un article";
+  document.getElementById("scan-toggle-btn").textContent = "📷 Scanner un article";
   document.getElementById("reader").style.display = "none";
+  clearTimeout(scanTimer);
+  scanTimer = null;
   if (zxingReader) {
     try {
       zxingReader.reset();
     } catch (e) {}
     zxingReader = null;
+  }
+  if (scanStream) {
+    scanStream.getTracks().forEach((t) => {
+      try {
+        t.stop();
+      } catch (e) {}
+    });
+    scanStream = null;
+  }
+  const video = document.getElementById("scanner-video");
+  if (video) {
+    try {
+      video.pause();
+    } catch (e) {}
+    video.srcObject = null;
   }
 }
 
@@ -798,6 +1089,46 @@ function goToScreen(name) {
     renderPrepaTab();
   }
   if (name === "settings") renderStockStatus();
+}
+
+/* ===================== Réglages : envoi Gmail ===================== */
+
+function renderMailSettings() {
+  document.getElementById("mail-to").value = state.mail.to || "";
+  document.getElementById("mail-client-id").value = state.mail.clientId || "";
+  const ok = mailConfigured();
+  document.getElementById("mail-status").innerHTML = ok
+    ? `<div class="chip-status ok">✓ Envoi Gmail activé</div>`
+    : `<div class="chip-status off">Non configuré : envoi par le menu de partage</div>`;
+  document.getElementById("export-capa-btn").textContent = ok ? "Envoyer la capa par Gmail" : "Envoyer la capa (XLS 5.0/95)";
+  document.getElementById("export-prepa-btn").textContent = ok ? "Envoyer la prépa par Gmail" : "Envoyer la prépa (XLS 5.0/95)";
+}
+
+function saveMailSettings() {
+  const to = document.getElementById("mail-to").value.trim();
+  const clientId = document.getElementById("mail-client-id").value.trim();
+  const bad = parseRecipients(to).filter((e) => !isValidEmail(e));
+  if (bad.length) {
+    showToast(`Adresse invalide : ${bad[0]}`, 3500);
+    return;
+  }
+  if (clientId && !/\.apps\.googleusercontent\.com$/.test(clientId)) {
+    showToast("L'identifiant client doit finir par .apps.googleusercontent.com", 4000);
+    return;
+  }
+  state.mail = { clientId, to };
+  gmailToken = null;
+  saveJSON(LS_KEYS.mail, state.mail);
+  renderMailSettings();
+  showToast(mailConfigured() ? "Envoi Gmail enregistré" : "Réglages enregistrés (destinataire et identifiant requis)");
+}
+
+function disableMail() {
+  state.mail = { clientId: "", to: "" };
+  gmailToken = null;
+  saveJSON(LS_KEYS.mail, state.mail);
+  renderMailSettings();
+  showToast("Envoi Gmail désactivé");
 }
 
 /* ===================== Réglages avancés : mapping des colonnes ===================== */
@@ -845,6 +1176,7 @@ function init() {
   renderSessionTab();
   renderPrepaTab();
   renderColMapForm();
+  renderMailSettings();
   goToScreen("scan");
 
   document.querySelectorAll(".tab").forEach((t) => {
@@ -902,6 +1234,8 @@ function init() {
 
   document.getElementById("clear-session-btn").onclick = clearSession;
   document.getElementById("clear-prepa-btn").onclick = clearPrepa;
+  document.getElementById("save-mail-btn").onclick = saveMailSettings;
+  document.getElementById("disable-mail-btn").onclick = disableMail;
   document.getElementById("export-capa-btn").onclick = () => exportAndShare("capa");
   document.getElementById("export-prepa-btn").onclick = () => exportAndShare("prepa");
 

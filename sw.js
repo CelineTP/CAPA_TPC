@@ -1,4 +1,4 @@
-const CACHE_NAME = "capa-stock-v3";
+const CACHE_NAME = "capa-stock-v5";
 const CORE_ASSETS = [
   "./",
   "./index.html",
