@@ -1,6 +1,6 @@
 # Capa Stock
 
-Appli web (PWA) pour scanner un article en magasin, consulter ses infos (désignation, stock, prépa en cours) et définir sa capa par site, puis envoyer le résultat par mail en XLS (5.0/95) ou CSV.
+Appli web (PWA) pour scanner un article en magasin, consulter ses infos (désignation, stock, prépa en cours) et définir sa capa par site, puis envoyer le résultat par mail en XLS (5.0/95).
 
 ## Déploiement sur GitHub Pages
 
@@ -11,7 +11,7 @@ Appli web (PWA) pour scanner un article en magasin, consulter ses infos (désign
    `https://<ton-compte-github>.github.io/capa-stock/`
 5. Ouvre cette adresse sur l'iPhone avec Safari, puis **Partager → Sur l'écran d'accueil**. L'appli s'installe comme une vraie appli, avec son icône.
 
-Chaque mise à jour : remplace les fichiers modifiés sur GitHub (commit), la version installée se met à jour automatiquement au prochain lancement (grâce au service worker).
+Chaque mise à jour : remplace **TOUS les fichiers ensemble** sur GitHub (`index.html`, `app.js`, `styles.css`, `manifest.json`, `sw.js` et le dossier `icons/`), jamais un seul à la fois : `index.html` et `app.js` doivent toujours être de la même version, sinon les boutons peuvent ne plus répondre. Le service worker va chercher la nouvelle version en priorité : relance l'appli (ferme-la complètement puis rouvre-la) pour la voir.
 
 ## Utilisation
 
@@ -85,5 +85,5 @@ Une fois l'appli ouverte une première fois (et le fichier stock importé), elle
 ## Limites connues
 
 - Le fichier stock est mémorisé dans le stockage local du navigateur (quelques Mo en général suffisants pour plusieurs milliers d'articles). Si le fichier est très volumineux, un message t'avertit s'il n'a pas pu être entièrement mémorisé — dans ce cas, réimporte-le à chaque lancement.
-- Le scan caméra utilise la librairie **ZXing** (moteur de décodage barres 1D/2D éprouvé), réglée pour reconnaître EAN-13, EAN-8, UPC-A, UPC-E, Code128, Code39 et ITF. Fonctionne en Safari iOS 15+ (accès à la caméra à autoriser au premier lancement). Si le scan reste noir ou ne réagit pas : vérifie que le site est bien ouvert en HTTPS (github.io l'est par défaut), et que la permission caméra n'a pas été refusée par erreur (Réglages iPhone → Safari → Caméra).
+- Le scan caméra ouvre la caméra arrière en haute définition avec mise au point continue. Il utilise le détecteur de codes-barres intégré au navigateur quand il existe (Chrome sur Android), sinon la librairie **ZXing** (iPhone / iPad, Safari). Formats lus : EAN-13, EAN-8, UPC-A, UPC-E, Code128, Code39 et ITF. Une ligne sous la vidéo indique le moteur utilisé et la résolution (ex. « Détecteur natif · 1920×1080 »). Si le scan reste noir ou ne réagit pas : vérifie que le site est ouvert en HTTPS (github.io l'est par défaut) et que la permission caméra n'a pas été refusée (réglages du navigateur). La recherche par code ou libellé reste toujours disponible en repli.
 - Le partage direct par mail avec pièce jointe utilise le menu de partage iOS natif ; sur d'anciens iPhones/versions iOS, l'appli bascule automatiquement sur un téléchargement du fichier à joindre manuellement.

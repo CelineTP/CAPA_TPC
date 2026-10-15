@@ -1094,6 +1094,8 @@ function goToScreen(name) {
 /* ===================== Réglages : envoi Gmail ===================== */
 
 function renderMailSettings() {
+  // Si la page n'a pas le bloc Gmail (ancienne version de index.html), on ne fait rien.
+  if (!document.getElementById("mail-to")) return;
   document.getElementById("mail-to").value = state.mail.to || "";
   document.getElementById("mail-client-id").value = state.mail.clientId || "";
   const ok = mailConfigured();
@@ -1171,12 +1173,14 @@ function saveColMapForm() {
 /* ===================== Initialisation ===================== */
 
 function init() {
-  tryRestoreStockFromCache();
-  renderStockStatus();
-  renderSessionTab();
-  renderPrepaTab();
-  renderColMapForm();
-  renderMailSettings();
+  // Chaque étape est protégée : une erreur sur l'une ne doit jamais empêcher les boutons de marcher.
+  [tryRestoreStockFromCache, renderStockStatus, renderSessionTab, renderPrepaTab, renderColMapForm, renderMailSettings].forEach((fn) => {
+    try {
+      fn();
+    } catch (e) {
+      console.error("Initialisation :", fn.name, e);
+    }
+  });
   goToScreen("scan");
 
   document.querySelectorAll(".tab").forEach((t) => {
@@ -1234,8 +1238,10 @@ function init() {
 
   document.getElementById("clear-session-btn").onclick = clearSession;
   document.getElementById("clear-prepa-btn").onclick = clearPrepa;
-  document.getElementById("save-mail-btn").onclick = saveMailSettings;
-  document.getElementById("disable-mail-btn").onclick = disableMail;
+  const saveMailBtn = document.getElementById("save-mail-btn");
+  const disableMailBtn = document.getElementById("disable-mail-btn");
+  if (saveMailBtn) saveMailBtn.onclick = saveMailSettings;
+  if (disableMailBtn) disableMailBtn.onclick = disableMail;
   document.getElementById("export-capa-btn").onclick = () => exportAndShare("capa");
   document.getElementById("export-prepa-btn").onclick = () => exportAndShare("prepa");
 
